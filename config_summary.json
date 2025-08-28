@@ -1,0 +1,8 @@
+{
+  "timestamp": "2025-08-28T10:28:52.181824",
+  "environment": "hybrid",
+  "data_source": "live",
+  "trading_mode": "paper",
+  "live_token_set": true,
+  "sandbox_token_set": true
+}
