@@ -1,260 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trading Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/babel-standalone@6.26.0/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Dashboard</title>
+
+<!-- React + Babel -->
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/babel-standalone@6.26.0/babel.min.js"></script>
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- TradingView -->
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body class="bg-gray-100">
-    <div id="root" class="container mx-auto p-4"></div>
+<div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const { createRoot } = ReactDOM;
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+const { createRoot } = ReactDOM;
 
-        function TradingDashboard() {
-            const [logs, setLogs] = useState([]);
-            const [trades, setTrades] = useState([]);
-            const [summary, setSummary] = useState({ day_pnl: 0, capital_used: 0, return_pct: 0 });
-            const [wsConnected, setWsConnected] = useState(false);
-            const [error, setError] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
-            const [marketStatus, setMarketStatus] = useState('Checking...');
-            const logContainerRef = useRef(null);
+function TradingDashboard() {
+  const [marketStatus, setMarketStatus] = useState('Checking...');
+  const [summary, setSummary] = useState({ day_pnl: 0, capital_used: 0, return_pct: 0 });
+  const [trades, setTrades] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [wsConnected, setWsConnected] = useState(false);
+  const logContainerRef = useRef(null);
+  const tvWidgetRef = useRef(null);
 
-            // WebSocket setup
-            useEffect(() => {
-                let ws;
-                const connectWebSocket = () => {
-                    ws = new WebSocket('ws://localhost:8765');
-                    ws.onopen = () => {
-                        console.log('WebSocket connected');
-                        setWsConnected(true);
-                        setError(null);
-                    };
-                    ws.onmessage = (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.type === 'log') {
-                                setLogs((prev) => [...prev, { id: Date.now(), message: data.data }].slice(-50));
-                                if (data.data.includes('Market status')) {
-                                    setMarketStatus(data.data.includes('Open') ? 'Open' : 'Closed');
-                                }
-                            } else if (data.type === 'trades') {
-                                setTrades(data.data);
-                            } else if (data.type === 'summary') {
-                                setSummary(data.data);
-                            }
-                        } catch (e) {
-                            console.error('WebSocket message error:', e);
-                            setError('Failed to parse WebSocket data');
-                        }
-                    };
-                    ws.onclose = () => {
-                        console.log('WebSocket disconnected, retrying in 5s...');
-                        setWsConnected(false);
-                        setTimeout(connectWebSocket, 5000);
-                    };
-                    ws.onerror = (error) => {
-                        console.error('WebSocket error:', error);
-                        setError('WebSocket connection failed');
-                    };
-                };
+  // Initialize TradingView
+  useEffect(() => {
+    setTimeout(() => {
+      tvWidgetRef.current = new TradingView.widget({
+        container_id: "tradingview_chart",
+        width: "100%",
+        height: 500,
+        symbol: "NSE:BANKNIFTY",
+        interval: "1",
+        timezone: "Asia/Kolkata",
+        theme: "light",
+        style: 1,
+        locale: "en",
+        toolbar_bg: "#f1f3f6",
+        hide_side_toolbar: false,
+        allow_symbol_change: true,
+        studies: [],
+        withdateranges: true,
+        enable_publishing: false,
+        save_image: false,
+        details: true,
+        hotlist: true,
+        calendar: true,
+      });
+    }, 500);
+  }, []);
 
-                connectWebSocket();
+  // WebSocket
+  useEffect(() => {
+    let ws;
+    const connectWebSocket = () => {
+      ws = new WebSocket('ws://localhost:8765');
+      ws.onopen = () => setWsConnected(true);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if(data.type === 'log') {
+            setLogs(prev => [...prev, {id: Date.now(), message: data.data}].slice(-50));
+            if(data.data.includes("Market status")) {
+              setMarketStatus(data.data.includes("Open") ? "Open" : "Closed");
+            }
+          } else if(data.type === 'trades') setTrades(data.data);
+          else if(data.type === 'summary') setSummary(data.data);
+        } catch(e) { console.error("WS parse error:", e); }
+      };
+      ws.onclose = () => { setWsConnected(false); setTimeout(connectWebSocket, 5000); };
+      ws.onerror = () => setWsConnected(false);
+    };
+    connectWebSocket();
+    return () => ws && ws.close();
+  }, []);
 
-                return () => ws && ws.close();
-            }, []);
+  // Polling fallback for logs/trades/summary if WS fails
+  useEffect(() => {
+    const pollData = async () => {
+      try {
+        const [logsRes, tradesRes, summaryRes] = await Promise.all([
+          fetch('http://localhost:5000/api/logs').then(r=>r.json()),
+          fetch('http://localhost:5000/api/trades').then(r=>r.json()),
+          fetch('http://localhost:5000/api/summary').then(r=>r.json())
+        ]);
+        setLogs(logsRes.map((l,i)=>({id:i,message:l.message})));
+        setTrades(tradesRes);
+        setSummary(summaryRes);
+        const marketLog = logsRes.find(l=>l.message.includes('Market status'));
+        if(marketLog) setMarketStatus(marketLog.message.includes('Open')?"Open":"Closed");
+      } catch(e) { console.error("Polling error:", e); }
+    };
+    const interval = setInterval(()=>{ if(!wsConnected) pollData(); },2000);
+    return ()=>clearInterval(interval);
+  }, [wsConnected]);
 
-            // Fallback polling if WebSocket fails
-            useEffect(() => {
-                if (!wsConnected) {
-                    const pollInterval = setInterval(async () => {
-                        setIsLoading(true);
-                        try {
-                            const endpoints = [
-                                'http://localhost:5000/api/logs',
-                                'http://localhost:5000/api/trades',
-                                'http://localhost:5000/api/summary'
-                            ];
-                            const responses = await Promise.all(
-                                endpoints.map(url =>
-                                    fetch(url, { mode: 'cors' })
-                                        .then(res => res.json())
-                                )
-                            );
-                            const [logsRes, tradesRes, summaryRes] = responses;
-                            setLogs(logsRes.map((log, i) => ({ id: i, message: log.message })));
-                            setTrades(tradesRes);
-                            setSummary(summaryRes);
-                            const marketLog = logsRes.find(log => log.message.includes('Market status'));
-                            if (marketLog) {
-                                setMarketStatus(marketLog.message.includes('Open') ? 'Open' : 'Closed');
-                            }
-                        } catch (error) {
-                            console.error('Polling error:', error);
-                            setError(`Failed to fetch data: ${error.message}`);
-                        } finally {
-                            setIsLoading(false);
-                        }
-                    }, 5000);
+  // Auto-scroll logs
+  useEffect(()=>{
+    if(logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+  }, [logs]);
 
-                    return () => clearInterval(pollInterval);
-                }
-            }, [wsConnected]);
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* Navbar */}
+      <nav className="bg-gray-800 text-white p-4 flex justify-between items-center">
+        <h1 className="text-xl font-bold">Trading Dashboard {wsConnected ? '🟢' : '🔴'} (Market: {marketStatus})</h1>
+        <div className="flex space-x-6">
+          <div>Day P&L: ₹{summary.day_pnl.toFixed(2)}</div>
+          <div>Capital Used: ₹{summary.capital_used.toFixed(2)}</div>
+          <div>Net Return: {summary.return_pct.toFixed(2)}%</div>
+        </div>
+      </nav>
 
-            // Auto-scroll logs
-            useEffect(() => {
-                if (logContainerRef.current) {
-                    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-                }
-            }, [logs]);
+      {/* Main content */}
+      <div className="flex flex-col md:flex-row p-4 space-y-4 md:space-y-0 md:space-x-4">
+        <div className="flex-1 bg-white rounded-lg shadow-md p-4">
+          <div id="tradingview_chart" style={{height:'500px', width:'100%'}}></div>
+        </div>
+        <div className="w-64 flex flex-col space-y-4">
+          <button className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded">Buy CE</button>
+          <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded">Buy PE</button>
+        </div>
+      </div>
 
-            // TradingView Chart
-            useEffect(() => {
-                if (!window.TradingView) return;
+      <div className="flex flex-col md:flex-row p-4 space-y-4 md:space-y-0 md:space-x-4 flex-1">
+        {/* Trade History */}
+        <div className="flex-1 bg-white rounded-lg shadow-md p-4 overflow-x-auto">
+          <h2 className="text-lg font-semibold mb-2">Trade History</h2>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-200">
+                <th className="p-2">Time</th>
+                <th className="p-2">Action</th>
+                <th className="p-2">Instrument</th>
+                <th className="p-2">Qty</th>
+                <th className="p-2">Price</th>
+                <th className="p-2">Gross P&L</th>
+                <th className="p-2">Net P&L</th>
+                <th className="p-2">Day P&L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trades.length===0 ? <tr><td colSpan="8" className="p-2 text-center">No trades available</td></tr> :
+              trades.map(trade => (
+                <tr key={trade.timestamp} className="border-t">
+                  <td className="p-2">{new Date(trade.timestamp).toLocaleString()}</td>
+                  <td className="p-2">{trade.action}</td>
+                  <td className="p-2">{trade.instrument_key}</td>
+                  <td className="p-2">{trade.quantity}</td>
+                  <td className="p-2">₹{trade.price.toFixed(2)}</td>
+                  <td className="p-2">{trade.gross_profit?`₹${trade.gross_profit.toFixed(2)}`:'-'}</td>
+                  <td className="p-2">{trade.net_profit?`₹${trade.net_profit.toFixed(2)}`:'-'}</td>
+                  <td className="p-2">{trade.day_pnl?`₹${trade.day_pnl.toFixed(2)}`:'-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-                new window.TradingView.widget({
-                    autosize: true,
-                    symbol: "NSE:BANKNIFTY",
-                    interval: "1",
-                    container_id: "tradingview_chart",
-                    timezone: "Asia/Kolkata",
-                    theme: "light",
-                    style: 1, // 1 = candlestick, 0 = line
-                    toolbar_bg: "#f1f3f6",
-                    withdateranges: true,
-                    hide_side_toolbar: false,
-                    allow_symbol_change: true,
-                    studies: [],
-                    enable_publishing: false,
-                    save_image: false,
-                    locale: "en",
-                    disabled_features: ["use_localstorage_for_settings"],
-                    enabled_features: ["study_templates"],
-                    overrides: {
-                        "mainSeriesProperties.candleStyle.upColor": "#4caf50",
-                        "mainSeriesProperties.candleStyle.downColor": "#f44336",
-                        "mainSeriesProperties.candleStyle.wickUpColor": "#4caf50",
-                        "mainSeriesProperties.candleStyle.wickDownColor": "#f44336",
-                    }
-                });
-            }, []);
+        {/* Logs */}
+        <div className="w-80 bg-white rounded-lg shadow-md p-4 flex flex-col">
+          <h2 className="text-lg font-semibold mb-2">Logs</h2>
+          <div ref={logContainerRef} className="flex-1 overflow-y-auto bg-gray-900 text-white p-2 rounded font-mono text-sm">
+            {logs.length===0 ? <div>No logs</div> : logs.map(log => <div key={log.id}>{log.message}</div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-            return (
-                <div className="space-y-6">
-                    <h1 className="text-3xl font-bold text-center text-gray-800">
-                        Trading Dashboard {wsConnected ? '🟢' : '🔴'} (Market: {marketStatus})
-                    </h1>
-                    {error && (
-                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
-                            <p className="font-bold">Error</p>
-                            <p>{error}</p>
-                        </div>
-                    )}
-                    {isLoading && (
-                        <div className="text-center text-gray-600">
-                            Loading data...
-                        </div>
-                    )}
-                    {marketStatus === 'Closed' && (
-                        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4">
-                            <p className="font-bold">Market Closed</p>
-                            <p>Trading is paused as the market is closed (9:20 AM - 3:30 PM IST).</p>
-                        </div>
-                    )}
-
-                    {/* TradingView Chart */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-semibold mb-4">Bank Nifty TradingView Chart</h2>
-                        <div id="tradingview_chart" style={{ height: "500px", width: "100%" }}></div>
-                    </div>
-
-                    {/* Summary Card */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-semibold mb-4">Summary</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="text-center">
-                                <p className="text-gray-600">Day P&L</p>
-                                <p className="text-2xl font-bold text-green-600">₹{summary.day_pnl.toFixed(2)}</p>
-                            </div>
-                            <div className="text-center">
-                                <p className="text-gray-600">Capital Used</p>
-                                <p className="text-2xl font-bold">₹{summary.capital_used.toFixed(2)}</p>
-                            </div>
-                            <div className="text-center">
-                                <p className="text-gray-600">Net Return</p>
-                                <p className="text-2xl font-bold text-blue-600">{summary.return_pct.toFixed(2)}%</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Trades Table */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-semibold mb-4">Trade History</h2>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-200">
-                                        <th className="p-2">Time</th>
-                                        <th className="p-2">Action</th>
-                                        <th className="p-2">Instrument</th>
-                                        <th className="p-2">Quantity</th>
-                                        <th className="p-2">Price</th>
-                                        <th className="p-2">Gross P&L</th>
-                                        <th className="p-2">Net P&L</th>
-                                        <th className="p-2">Day P&L</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {trades.length === 0 && (
-                                        <tr>
-                                            <td colSpan="8" className="p-2 text-center">No trades available</td>
-                                        </tr>
-                                    )}
-                                    {trades.map((trade) => (
-                                        <tr key={trade.timestamp} className="border-t">
-                                            <td className="p-2">{new Date(trade.timestamp).toLocaleString()}</td>
-                                            <td className="p-2">{trade.action}</td>
-                                            <td className="p-2">{trade.instrument_key}</td>
-                                            <td className="p-2">{trade.quantity}</td>
-                                            <td className="p-2">₹{trade.price.toFixed(2)}</td>
-                                            <td className="p-2">{trade.gross_profit ? `₹${trade.gross_profit.toFixed(2)}` : '-'}</td>
-                                            <td className="p-2">{trade.net_profit ? `₹${trade.net_profit.toFixed(2)}` : '-'}</td>
-                                            <td className="p-2">{trade.day_pnl ? `₹${trade.day_pnl.toFixed(2)}` : '-'}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Logs Console */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-semibold mb-4">Logs</h2>
-                        <div
-                            ref={logContainerRef}
-                            className="h-64 overflow-y-auto bg-gray-900 text-white p-4 rounded font-mono text-sm"
-                        >
-                            {logs.length === 0 && !isLoading && (
-                                <div>No logs available</div>
-                            )}
-                            {logs.map((log) => (
-                                <div key={log.id} className="mb-1">{log.message}</div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        const root = createRoot(document.getElementById('root'));
-        root.render(<TradingDashboard />);
-    </script>
+const root = createRoot(document.getElementById('root'));
+root.render(<TradingDashboard />);
+</script>
 </body>
 </html>
