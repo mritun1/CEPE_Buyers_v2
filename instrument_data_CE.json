@@ -1,7 +1,7 @@
 {
-    "instrument_key": "NSE_FO|71954",
-    "strike_ce": 24450.0,
-    "strike_pe": 24500.0,
-    "expiry": "2025-08-28",
-    "created_at": "2025-08-28T14:45:31.619220"
+  "instrument_key": "NSE_FO|71948",
+  "strike_ce": 24350.0,
+  "strike_pe": 24650.0,
+  "expiry": "2025-08-28",
+  "created_at": "2025-08-28T22:32:03.921871+05:30"
 }

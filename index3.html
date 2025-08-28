@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pro Trading Dashboard</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Font Awesome via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js"></script>
+
+  <!-- TradingView Widget -->
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+
+  <style>
+    html,body { height:100%; background:#0b1020; color:#e6eef6; }
+    .navbar { background: linear-gradient(90deg,#071130,#0b1430); }
+    .panel { background: linear-gradient(180deg,#071427,#081a35); border:1px solid rgba(255,255,255,0.04); }
+    .muted { color: #9aa7bb; }
+    .active-dot { color: #34d399; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:0.5 } }
+    .small { font-size:0.85rem; }
+    .trade-active { background: linear-gradient(90deg,#052f2f,#07403f); border:1px solid #065f5f; }
+    .icon-btn { width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px; }
+    .chart-wrapper { position:relative; }
+    .timeframe-btn.active { background:#0ea5a3; color:#042f2f; }
+    #tradingview_chart { width:100%; height:420px; }
+    @media (max-width:1100px) {
+      .left-col { display:none; }
+      .right-col { display:none; }
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen">
+
+  <!-- NAVBAR -->
+  <header class="navbar px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+      <div class="text-xl font-semibold">Trading Dashboard</div>
+      <div class="muted small px-3 py-1 rounded-md panel">Date: <span id="today-date" class="font-medium ml-2"></span></div>
+      <div id="market-status" class="muted small px-3 py-1 rounded-md panel flex items-center">
+        <i class="fa fa-circle mr-2" id="market-dot"></i> <span id="market-text">Checking...</span>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-4">
+      <div class="muted small">Overall</div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Profit</div>
+        <div id="overall-profit" class="text-lg font-semibold">₹0.00</div>
+      </div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Charges</div>
+        <div id="overall-charges" class="text-lg font-semibold">₹0.00</div>
+      </div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Capital Used</div>
+        <div id="overall-capital" class="text-lg font-semibold">₹0.00</div>
+      </div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Wallet</div>
+        <div id="wallet-balance" class="text-lg font-semibold">₹0.00</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN AREA -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- LEFT COL -->
+    <aside class="left-col w-72 p-4 space-y-4 panel">
+      <div class="flex items-center justify-between">
+        <div class="text-sm font-medium">Instrument</div>
+      </div>
+
+      <div>
+        <select id="instrument-select" class="w-full bg-transparent border border-gray-700 p-2 rounded-md">
+          <option value="NIFTYBANK">Bank Nifty</option>
+          <option value="NIFTY">Nifty 50</option>
+          <option value="FINNIFTY">Fin Nifty</option>
+          <option value="SENSEX">Sensex</option>
+        </select>
+      </div>
+
+      <div class="mt-4 panel p-3 rounded-md">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-bold">CE Details</div>
+          <div class="muted small">live</div>
+        </div>
+        <div class="mt-2 muted small">Strike</div>
+        <div id="ce-strike" class="font-medium">--</div>
+        <div class="mt-2 muted small">Instrument</div>
+        <div id="ce-key" class="text-xs break-all muted">--</div>
+      </div>
+
+      <div class="mt-3 panel p-3 rounded-md">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-bold">PE Details</div>
+          <div class="muted small">live</div>
+        </div>
+        <div class="mt-2 muted small">Strike</div>
+        <div id="pe-strike" class="font-medium">--</div>
+        <div class="mt-2 muted small">Instrument</div>
+        <div id="pe-key" class="text-xs break-all muted">--</div>
+      </div>
+    </aside>
+
+    <!-- CENTER -->
+    <main class="flex-1 p-4 overflow-auto">
+      <!-- Chart panel -->
+      <section class="panel p-4 rounded-md">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-3">
+            <div class="text-lg font-semibold">Chart</div>
+            <div class="muted small">Live (Bank Nifty)</div>
+          </div>
+        </div>
+
+        <div class="relative chart-wrapper" id="chart-container" style="height:420px;">
+          <div id="tradingview_chart"></div>
+        </div>
+      </section>
+
+      <!-- Trade history -->
+      <section class="panel p-4 rounded-md mt-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-lg font-semibold">Trade History</div>
+          <div class="muted small">Real-time</div>
+        </div>
+        <div class="overflow-auto" style="max-height:220px;">
+          <table class="min-w-full text-left small">
+            <thead class="text-xs muted">
+              <tr>
+                <th class="p-2">Time</th>
+                <th class="p-2">Type</th>
+                <th class="p-2">Qty</th>
+                <th class="p-2">Gross</th>
+                <th class="p-2">Net</th>
+                <th class="p-2">Charges</th>
+              </tr>
+            </thead>
+            <tbody id="trade-table-body" class="text-sm"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- RIGHT COL -->
+    <aside class="right-col w-80 p-4 space-y-4 panel">
+      <!-- CE box -->
+      <div class="panel p-4 rounded-md flex flex-col items-center">
+        <div class="flex items-center justify-between w-full">
+          <div class="font-bold">CE</div>
+          <div id="ce-trading-ind" class="muted small">Idle</div>
+        </div>
+        <div class="mt-3 w-full grid grid-cols-2 gap-2">
+          <div class="text-xs muted small">Gross</div><div id="ce-gross" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Net</div><div id="ce-net" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Charges</div><div id="ce-charges" class="font-semibold text-right">₹0.00</div>
+        </div>
+        <button id="btn-trade-ce" class="mt-4 w-full py-2 rounded-md bg-emerald-500 text-black font-semibold">Trade CE</button>
+      </div>
+
+      <!-- PE box -->
+      <div class="panel p-4 rounded-md flex flex-col items-center">
+        <div class="flex items-center justify-between w-full">
+          <div class="font-bold">PE</div>
+          <div id="pe-trading-ind" class="muted small">Idle</div>
+        </div>
+        <div class="mt-3 w-full grid grid-cols-2 gap-2">
+          <div class="text-xs muted small">Gross</div><div id="pe-gross" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Net</div><div id="pe-net" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Charges</div><div id="pe-charges" class="font-semibold text-right">₹0.00</div>
+        </div>
+        <button id="btn-trade-pe" class="mt-4 w-full py-2 rounded-md bg-emerald-500 text-black font-semibold">Trade PE</button>
+      </div>
+
+      <div class="panel p-3 rounded-md small muted">
+        <div class="font-medium">Notes</div>
+        <ul class="list-disc ml-4 mt-2">
+          <li>All data is sourced from backend endpoints and WebSocket.</li>
+          <li>Chart powered by TradingView with full features for Bank Nifty.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <!-- SCRIPT -->
+  <script>
+    // --------------------------
+    // Config
+    const API_BASE = 'http://localhost:5000';
+    const WS_URL = 'ws://localhost:8765';
+    let tradingViewWidget = null;
+    let ceActive = false, peActive = false;
+    let lastChartData = { labels: [], values: [] };
+    let widgetReady = false;
+
+    // --------------------------
+    // Helpers
+    function fmt(n) { return Number(n || 0).toFixed(2); }
+    function setText(id, v) { const el = document.getElementById(id); if (el) el.innerText = v; }
+
+    // --------------------------
+    // Initialize date & market status
+    async function initMarketStatus() {
+      try {
+        const res = await fetch(API_BASE + '/api/market_status');
+        const data = await res.json();
+        setText('market-text', data.status || 'Unknown');
+        document.getElementById('market-dot').style.color = data.status === 'LIVE' ? '#ef4444' : '#34d399';
+      } catch (e) { console.error('Market status fetch error', e); }
+    }
+    setText('today-date', new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    initMarketStatus();
+
+    // --------------------------
+    // TradingView Chart
+    function initTradingViewChart() {
+      tradingViewWidget = new TradingView.widget({
+        container_id: "tradingview_chart",
+        width: "100%",
+        height: 420,
+        symbol: "NSE:BANKNIFTY",
+        interval: "60",
+        timezone: "Asia/Kolkata",
+        theme: "light",
+        style: "1",
+        locale: "en",
+        // Show historical data even if market is closed
+        hide_top_toolbar: false,
+        allow_symbol_change: true
+        });
+
+      // Check for widget readiness
+      const checkWidgetReady = setInterval(() => {
+        const iframe = document.getElementById('tradingview_chart').querySelector('iframe');
+        if (iframe) {
+          clearInterval(checkWidgetReady);
+          widgetReady = true;
+          console.log('TradingView chart ready');
+          updateTradingViewChart(lastChartData.labels, lastChartData.values);
+        }
+      }, 500);
+    }
+
+    function updateTradingViewChart(labels, values) {
+      if (!widgetReady || !labels.length || !values.length) return;
+      const iframe = document.getElementById('tradingview_chart').querySelector('iframe');
+      if (!iframe) return;
+      
+      // Simulate OHLC data from backend close prices
+      const bars = labels.map((label, i) => ({
+        time: Math.floor(new Date(label).getTime() / 1000),
+        open: values[i] * 0.998,
+        high: values[i] * 1.002,
+        low: values[i] * 0.996,
+        close: values[i],
+        volume: Math.floor(Math.random() * 1000)
+      }));
+      
+      // Post message to TradingView iframe
+      iframe.contentWindow.postMessage({
+        name: 'set-data',
+        data: bars
+      }, '*');
+    }
+
+    // --------------------------
+    // Fetch initial data
+    async function fetchInitial() {
+      try {
+        const summary = await (await fetch(API_BASE + '/api/summary')).json();
+        applySummary(summary);
+        const cePeDetails = await (await fetch(API_BASE + '/api/ce_pe_details')).json();
+        applyCePeDetails(cePeDetails);
+        applyTrades(cePeDetails);
+        const chart = await (await fetch(API_BASE + '/api/chart')).json();
+        lastChartData = { labels: chart.labels || [], values: chart.values || [] };
+        updateTradingViewChart(lastChartData.labels, lastChartData.values);
+      } catch (e) { console.error('Initial fetch error', e); }
+    }
+
+    function applySummary(s) {
+      if (!s) return;
+      const sum = s.overall || s;
+      setText('overall-profit', '₹' + fmt(sum.day_pnl || 0));
+      setText('overall-charges', '₹' + fmt(sum.charges || 0));
+      setText('overall-capital', '₹' + fmt(sum.capital_used || 0));
+      setText('wallet-balance', '₹' + fmt(sum.current_balance || 0));
+
+      if (s.ce) {
+        setText('ce-net', '₹' + fmt(s.ce.day_pnl || 0));
+        const grossCE = (s.ce.trades || []).reduce((a, t) => a + (t.gross_profit || 0), 0);
+        const chargesCE = (s.ce.trades || []).reduce((a, t) => a + (t.charges?.total || 0), 0);
+        setText('ce-gross', '₹' + fmt(grossCE));
+        setText('ce-charges', '₹' + fmt(chargesCE));
+        document.getElementById('ce-trading-ind').innerHTML = ceActive ? '<i class="fa fa-circle active-dot mr-2"></i>Trading' : 'Idle';
+      }
+
+      if (s.pe) {
+        setText('pe-net', '₹' + fmt(s.pe.day_pnl || 0));
+        const grossPE = (s.pe.trades || []).reduce((a, t) => a + (t.gross_profit || 0), 0);
+        const chargesPE = (s.pe.trades || []).reduce((a, t) => a + (t.charges?.total || 0), 0);
+        setText('pe-gross', '₹' + fmt(grossPE));
+        setText('pe-charges', '₹' + fmt(chargesPE));
+        document.getElementById('pe-trading-ind').innerHTML = peActive ? '<i class="fa fa-circle active-dot mr-2"></i>Trading' : 'Idle';
+      }
+    }
+
+    function applyCePeDetails(data) {
+      const ceInst = getInstrumentDetails('CE');
+      setText('ce-strike', ceInst?.strike_ce || '--');
+      setText('ce-key', ceInst?.instrument_key || '--');
+
+      const peInst = getInstrumentDetails('PE');
+      setText('pe-strike', peInst?.strike_pe || '--');
+      setText('pe-key', peInst?.instrument_key || '--');
+    }
+
+    function getInstrumentDetails(mode) {
+      try {
+        const file = mode === 'CE' ? 'instrument_data_CE.json' : 'instrument_data_PE.json';
+        return JSON.parse(localStorage.getItem(file)) || {};
+      } catch (e) {
+        console.error(`Error loading ${mode} instrument data`, e);
+        return {};
+      }
+    }
+
+    function applyTrades(t) {
+      const tbody = document.getElementById('trade-table-body');
+      tbody.innerHTML = '';
+      const combined = [...(t.ce?.trades || []).map(x => ({ ...x, opt: 'CE' })), ...(t.pe?.trades || []).map(x => ({ ...x, opt: 'PE' }))];
+      combined.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      combined.forEach(tr => {
+        const trEl = document.createElement('tr');
+        trEl.className = 'border-b border-gray-800';
+        trEl.innerHTML = `
+          <td class="p-2 small">${new Date(tr.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
+          <td class="p-2 small">${tr.opt}</td>
+          <td class="p-2 small">${tr.quantity || '-'}</td>
+          <td class="p-2 small">${fmt(tr.gross_profit || 0)}</td>
+          <td class="p-2 small">${fmt(tr.net_profit || 0)}</td>
+          <td class="p-2 small">${fmt(tr.charges?.total || 0)}</td>
+        `;
+        tbody.appendChild(trEl);
+      });
+    }
+
+    // --------------------------
+    // WebSocket
+    let ws = null;
+    function startWebSocket() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => console.log('WS connected');
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === 'initial' || msg.type === 'summary') {
+            applySummary(msg.data.summary);
+            applyCePeDetails(msg.data.summary);
+            applyTrades(msg.data.summary);
+            lastChartData = { labels: msg.data.chart?.labels || [], values: msg.data.chart?.values || [] };
+            updateTradingViewChart(lastChartData.labels, lastChartData.values);
+          } else if (msg.type === 'chart') {
+            lastChartData = { labels: msg.data.labels || [], values: msg.data.values || [] };
+            updateTradingViewChart(lastChartData.labels, lastChartData.values);
+          }
+        } catch (e) { console.error('WS message error', e); }
+      };
+      ws.onclose = () => setTimeout(startWebSocket, 2000);
+      ws.onerror = (e) => { console.error('WS error', e); ws.close(); };
+    }
+
+    // --------------------------
+    // CE/PE buttons
+    document.getElementById('btn-trade-ce').addEventListener('click', async () => {
+      const url = API_BASE + (ceActive ? '/api/stop' : '/api/start');
+      try {
+        const res = await fetch(url, { method: 'GET' });
+        const data = await res.json();
+        if (data.status === 'started') {
+          ceActive = true;
+          peActive = true;
+          document.getElementById('btn-trade-ce').innerText = 'Stop CE';
+          document.getElementById('btn-trade-ce').classList.add('trade-active');
+          document.getElementById('ce-trading-ind').innerHTML = '<i class="fa fa-circle active-dot mr-2"></i>Trading';
+          document.getElementById('btn-trade-pe').innerText = 'Stop PE';
+          document.getElementById('btn-trade-pe').classList.add('trade-active');
+          document.getElementById('pe-trading-ind').innerHTML = '<i class="fa fa-circle active-dot mr-2"></i>Trading';
+        } else {
+          ceActive = false;
+          peActive = false;
+          document.getElementById('btn-trade-ce').innerText = 'Trade CE';
+          document.getElementById('btn-trade-ce').classList.remove('trade-active');
+          document.getElementById('ce-trading-ind').innerHTML = 'Idle';
+          document.getElementById('btn-trade-pe').innerText = 'Trade PE';
+          document.getElementById('btn-trade-pe').classList.remove('trade-active');
+          document.getElementById('pe-trading-ind').innerHTML = 'Idle';
+        }
+      } catch (e) { console.error('CE trade toggle error', e); }
+    });
+
+    document.getElementById('btn-trade-pe').addEventListener('click', async () => {
+      const url = API_BASE + (peActive ? '/api/stop' : '/api/start');
+      try {
+        const res = await fetch(url, { method: 'GET' });
+        const data = await res.json();
+        if (data.status === 'started') {
+          ceActive = true;
+          peActive = true;
+          document.getElementById('btn-trade-ce').innerText = 'Stop CE';
+          document.getElementById('btn-trade-ce').classList.add('trade-active');
+          document.getElementById('ce-trading-ind').innerHTML = '<i class="fa fa-circle active-dot mr-2"></i>Trading';
+          document.getElementById('btn-trade-pe').innerText = 'Stop PE';
+          document.getElementById('btn-trade-pe').classList.add('trade-active');
+          document.getElementById('pe-trading-ind').innerHTML = '<i class="fa fa-circle active-dot mr-2"></i>Trading';
+        } else {
+          ceActive = false;
+          peActive = false;
+          document.getElementById('btn-trade-ce').innerText = 'Trade CE';
+          document.getElementById('btn-trade-ce').classList.remove('trade-active');
+          document.getElementById('ce-trading-ind').innerHTML = 'Idle';
+          document.getElementById('btn-trade-pe').innerText = 'Trade PE';
+          document.getElementById('btn-trade-pe').classList.remove('trade-active');
+          document.getElementById('pe-trading-ind').innerHTML = 'Idle';
+        }
+      } catch (e) { console.error('PE trade toggle error', e); }
+    });
+
+    // --------------------------
+    // Instrument select
+    document.getElementById('instrument-select').addEventListener('change', async () => {
+      try {
+        const cePeDetails = await (await fetch(API_BASE + '/api/ce_pe_details')).json();
+        applyCePeDetails(cePeDetails);
+        const symbolMap = {
+          'NIFTYBANK': 'NSE:BANKNIFTY',
+          'NIFTY': 'NSE:NIFTY',
+          'FINNIFTY': 'NSE:FINNIFTY',
+          'SENSEX': 'BSE:SENSEX'
+        };
+        const selected = document.getElementById('instrument-select').value;
+        const newSymbol = symbolMap[selected] || 'NSE:BANKNIFTY';
+        const checkWidgetReady = setInterval(() => {
+          const iframe = document.getElementById('tradingview_chart').querySelector('iframe');
+          if (iframe && widgetReady) {
+            clearInterval(checkWidgetReady);
+            iframe.contentWindow.postMessage({
+              name: 'set-symbol',
+              data: { symbol: newSymbol, interval: '1' }
+            }, '*');
+            console.log('Symbol changed to', newSymbol);
+          }
+        }, 500);
+      } catch (e) { console.error('Instrument change error', e); }
+    });
+
+    // --------------------------
+    // Initial load
+    async function loadAll() {
+      initTradingViewChart();
+      await fetchInitial();
+      startWebSocket();
+      document.getElementById('instrument-select').dispatchEvent(new Event('change'));
+    }
+    window.onload = loadAll;
+  </script>
+</body>
+</html>

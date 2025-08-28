@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pro Trading Dashboard</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Font Awesome for icons -->
+  <script src="https://kit.fontawesome.com/a2d9b2f6f6.js" crossorigin="anonymous"></script>
+
+  <!-- Chart.js + financial plugin (candlestick) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.0.0/dist/chartjs-chart-financial.umd.min.js"></script>
+
+  <style>
+    html,body { height:100%; background:#0b1020; color:#e6eef6; }
+    .navbar { background: linear-gradient(90deg,#071130,#0b1430); }
+    .panel { background: linear-gradient(180deg,#071427,#081a35); border:1px solid rgba(255,255,255,0.04); }
+    .muted { color: #9aa7bb; }
+    .active-dot { color: #34d399; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:0.5 } }
+    /* Drawing canvas sits on top of chart */
+    #draw-canvas { position:absolute; left:0; top:0; z-index:50; pointer-events:auto; }
+    .tool-btn.active { box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+    .small { font-size:0.85rem; }
+    .trade-active { background: linear-gradient(90deg,#052f2f,#07403f); border:1px solid #065f5f; }
+    .icon-btn { width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px; }
+    .chart-wrapper { position:relative; }
+    .timeframe-btn.active { background:#0ea5a3; color:#042f2f; }
+    /* responsive tweak */
+    @media (max-width:1100px) {
+      .left-col { display:none; }
+      .right-col { display:none; }
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen">
+
+  <!-- NAVBAR -->
+  <header class="navbar px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+      <div class="text-xl font-semibold">Trading Dashboard</div>
+      <div class="muted small px-3 py-1 rounded-md panel">Date: <span id="today-date" class="font-medium ml-2"></span></div>
+      <div id="market-status" class="muted small px-3 py-1 rounded-md panel flex items-center">
+        <i class="fa fa-circle mr-2" id="market-dot"></i> <span id="market-text">Checking...</span>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-4">
+      <div class="muted small">Overall</div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Profit</div>
+        <div id="overall-profit" class="text-lg font-semibold">₹0.00</div>
+      </div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Charges</div>
+        <div id="overall-charges" class="text-lg font-semibold">₹0.00</div>
+      </div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Capital Used</div>
+        <div id="overall-capital" class="text-lg font-semibold">₹0.00</div>
+      </div>
+      <div class="panel px-3 py-2 rounded-md">
+        <div class="text-xs muted">Wallet</div>
+        <div id="wallet-balance" class="text-lg font-semibold">₹0.00</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN AREA -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- LEFT COL -->
+    <aside class="left-col w-72 p-4 space-y-4 panel">
+      <div class="flex items-center justify-between">
+        <div class="text-sm font-medium">Instrument</div>
+      </div>
+
+      <div>
+        <select id="instrument-select" class="w-full bg-transparent border border-gray-700 p-2 rounded-md">
+          <option value="BANKNIFTY">Bank Nifty</option>
+          <option value="NIFTY50">Nifty 50</option>
+        </select>
+      </div>
+
+      <div class="mt-4 panel p-3 rounded-md">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-bold">CE Details</div>
+          <div class="muted small">live</div>
+        </div>
+        <div class="mt-2 muted small">Strike</div>
+        <div id="ce-strike" class="font-medium">--</div>
+        <div class="mt-2 muted small">Instrument</div>
+        <div id="ce-key" class="text-xs break-all muted">--</div>
+      </div>
+
+      <div class="mt-3 panel p-3 rounded-md">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-bold">PE Details</div>
+        </div>
+        <div class="mt-2 muted small">Strike</div>
+        <div id="pe-strike" class="font-medium">--</div>
+        <div class="mt-2 muted small">Instrument</div>
+        <div id="pe-key" class="text-xs break-all muted">--</div>
+      </div>
+    </aside>
+
+    <!-- CENTER -->
+    <main class="flex-1 p-4 overflow-auto">
+      <!-- Chart panel -->
+      <section class="panel p-4 rounded-md">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-3">
+            <div class="text-lg font-semibold">Chart</div>
+            <div class="muted small">Live (backend sourced)</div>
+            <div class="ml-3">
+              <button class="timeframe-btn px-2 py-1 rounded-md small" data-tf="1">1m</button>
+              <button class="timeframe-btn px-2 py-1 rounded-md small" data-tf="3">3m</button>
+              <button class="timeframe-btn px-2 py-1 rounded-md small" data-tf="5">5m</button>
+              <button class="timeframe-btn px-2 py-1 rounded-md small" data-tf="15">15m</button>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button id="btn-candle" class="icon-btn panel" title="Candlestick"><i class="fa fa-chart-area"></i></button>
+            <button id="btn-line" class="icon-btn panel" title="Line Chart"><i class="fa fa-line-chart"></i></button>
+            <button id="btn-fullscreen" class="icon-btn panel" title="Full screen"><i class="fa fa-expand"></i></button>
+          </div>
+        </div>
+
+        <div class="relative chart-wrapper" id="chart-container" style="height:420px;">
+          <canvas id="chart-canvas" style="width:100%;height:420px;"></canvas>
+          <!-- Drawing canvas overlay -->
+          <canvas id="draw-canvas"></canvas>
+          <!-- drawing toolbar floating -->
+          <div class="absolute top-3 left-3 z-40 flex space-x-2">
+            <button id="tool-trend" class="tool-btn icon-btn panel" title="Trend line"><i class="fa fa-pencil"></i></button>
+            <button id="tool-hline" class="tool-btn icon-btn panel" title="Horizontal line"><i class="fa fa-arrows-h"></i></button>
+            <button id="tool-erase" class="tool-btn icon-btn panel" title="Eraser"><i class="fa fa-eraser"></i></button>
+            <button id="tool-clear" class="tool-btn icon-btn panel" title="Clear all"><i class="fa fa-trash"></i></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trade history -->
+      <section class="panel p-4 rounded-md mt-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-lg font-semibold">Trade History</div>
+          <div class="muted small">Real-time</div>
+        </div>
+        <div class="overflow-auto" style="max-height:220px;">
+          <table class="min-w-full text-left small">
+            <thead class="text-xs muted">
+              <tr>
+                <th class="p-2">Time</th>
+                <th class="p-2">Type</th>
+                <th class="p-2">Qty</th>
+                <th class="p-2">Gross</th>
+                <th class="p-2">Net</th>
+                <th class="p-2">Charges</th>
+              </tr>
+            </thead>
+            <tbody id="trade-table-body" class="text-sm"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- RIGHT COL -->
+    <aside class="right-col w-80 p-4 space-y-4 panel">
+      <!-- CE box -->
+      <div class="panel p-4 rounded-md flex flex-col items-center">
+        <div class="flex items-center justify-between w-full">
+          <div class="font-bold">CE</div>
+          <div id="ce-trading-ind" class="muted small">Idle</div>
+        </div>
+        <div class="mt-3 w-full grid grid-cols-2 gap-2">
+          <div class="text-xs muted small">Gross</div><div id="ce-gross" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Net</div><div id="ce-net" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Charges</div><div id="ce-charges" class="font-semibold text-right">₹0.00</div>
+        </div>
+        <button id="btn-trade-ce" class="mt-4 w-full py-2 rounded-md bg-emerald-500 text-black font-semibold">Trade CE</button>
+      </div>
+
+      <!-- PE box -->
+      <div class="panel p-4 rounded-md flex flex-col items-center">
+        <div class="flex items-center justify-between w-full">
+          <div class="font-bold">PE</div>
+          <div id="pe-trading-ind" class="muted small">Idle</div>
+        </div>
+        <div class="mt-3 w-full grid grid-cols-2 gap-2">
+          <div class="text-xs muted small">Gross</div><div id="pe-gross" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Net</div><div id="pe-net" class="font-semibold text-right">₹0.00</div>
+          <div class="text-xs muted small">Charges</div><div id="pe-charges" class="font-semibold text-right">₹0.00</div>
+        </div>
+        <button id="btn-trade-pe" class="mt-4 w-full py-2 rounded-md bg-emerald-500 text-black font-semibold">Trade PE</button>
+      </div>
+
+      <div class="panel p-3 rounded-md small muted">
+        <div class="font-medium">Notes</div>
+        <ul class="list-disc ml-4 mt-2">
+          <li>All data is sourced from backend endpoints and WebSocket.</li>
+          <li>Use drawing tools to annotate the chart; drawings are local to the page.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <!-- SCRIPT -->
+  <script>
+    // --------------------------
+    // Config
+    const API_BASE = 'http://localhost:5000';
+    const WS_URL = 'ws://localhost:8765';
+    const chartCanvas = document.getElementById('chart-canvas');
+    const drawCanvas = document.getElementById('draw-canvas');
+    const chartContainer = document.getElementById('chart-container');
+    let tradingChart = null;
+    let chartMode = 'candlestick'; // 'candlestick' or 'line'
+    let currentSummary = null;
+    let ceActive = false, peActive = false;
+
+    // --------------------------
+    // Helpers
+    function fmt(n){ return Number(n||0).toFixed(2); }
+    function setText(id, v){ const el = document.getElementById(id); if(el) el.innerText = v; }
+
+    // --------------------------
+    // Initialize date & market status
+    setText('today-date', new Date().toLocaleDateString());
+    setText('market-text', 'Open');
+    document.getElementById('market-dot').style.color = '#34d399';
+
+    // --------------------------
+    // Setup Chart.js financial chart
+    function createChart(labels, values) {
+      // values is array of numeric closes OR array of OHLC objects if provided by backend (we support both)
+      const data = [];
+      // If backend supplies objects with o,h,l,c use them; else construct OHLC with close only
+      if (values.length && typeof values[0] === 'object' && values[0].o !== undefined) {
+        // financial dataset
+        values.forEach(v => data.push({ x: new Date(v.t), o: v.o, h: v.h, l: v.l, c: v.c }));
+      } else {
+        // use labels + values as line
+        for (let i=0;i<values.length;i++){
+          data.push({ x: labels[i] ? labels[i] : i, y: values[i] });
+        }
+      }
+
+      if (tradingChart) tradingChart.destroy();
+
+      if (chartMode === 'candlestick') {
+        tradingChart = new Chart(chartCanvas.getContext('2d'), {
+          type: 'candlestick',
+          data: { datasets: [{ label: 'Price', data }] },
+          options: {
+            animation:false,
+            plugins:{ legend:{ display:false } },
+            scales: {
+              x: { ticks:{ color:'#9aa7bb' }, grid:{ color: 'rgba(255,255,255,0.04)' } },
+              y: { ticks:{ color:'#9aa7bb' }, grid:{ color: 'rgba(255,255,255,0.04)' } }
+            }
+          }
+        });
+      } else {
+        tradingChart = new Chart(chartCanvas.getContext('2d'), {
+          type: 'line',
+          data: { labels: labels, datasets: [{ label:'Price', data: values, borderColor:'#06b6d4', backgroundColor:'rgba(6,182,212,0.08)', fill:true }] },
+          options: {
+            animation:false,
+            plugins:{ legend:{ display:false } },
+            scales: { x:{ ticks:{ color:'#9aa7bb' } }, y:{ ticks:{ color:'#9aa7bb' } } }
+          }
+        });
+      }
+
+      // make drawing canvas match chart size & position
+      resizeDrawCanvas();
+    }
+
+    // --------------------------
+    // Resize draw canvas overlay
+    function resizeDrawCanvas(){
+      const rect = chartCanvas.getBoundingClientRect();
+      drawCanvas.width = rect.width;
+      drawCanvas.height = rect.height;
+      drawCanvas.style.left = rect.left + 'px';
+      drawCanvas.style.top = rect.top + 'px';
+      drawCanvas.style.width = rect.width + 'px';
+      drawCanvas.style.height = rect.height + 'px';
+      drawCanvas.style.pointerEvents = 'auto';
+      drawCtx = drawCanvas.getContext('2d');
+      drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+      redrawAll();
+    }
+    window.addEventListener('resize', resizeDrawCanvas);
+
+    // --------------------------
+    // Drawing Tools Implementation
+    const drawings = []; // {type:'trend'|'hline', x1,y1,x2,y2, color}
+    let drawMode = null; // 'trend' / 'hline' / 'erase'
+    let isDrawing = false, startX=0,startY=0;
+    let drawCtx = null;
+
+    function screenToCanvas(x,y){
+      const rect = drawCanvas.getBoundingClientRect();
+      return { x: x - rect.left, y: y - rect.top };
+    }
+
+    function redrawAll(){
+      if(!drawCtx) return;
+      drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+      drawings.forEach(d => {
+        drawCtx.strokeStyle = d.color || '#f97316';
+        drawCtx.lineWidth = 2;
+        drawCtx.beginPath();
+        if(d.type==='trend'){
+          drawCtx.moveTo(d.x1,d.y1); drawCtx.lineTo(d.x2,d.y2);
+        } else if(d.type==='hline'){
+          drawCtx.moveTo(0,d.y1); drawCtx.lineTo(drawCanvas.width,d.y1);
+        }
+        drawCtx.stroke();
+      });
+    }
+
+    drawCanvas.addEventListener('mousedown', (e)=>{
+      const p = screenToCanvas(e.clientX,e.clientY);
+      if(drawMode==='erase'){
+        // find and remove nearby drawing
+        for(let i=drawingIndexNearby(p.x,p.y); i>=0; i=drawingIndexNearby(p.x,p.y)){
+          drawings.splice(i,1);
+        }
+        redrawAll();
+        return;
+      }
+      isDrawing = true;
+      startX = p.x; startY = p.y;
+    });
+    drawCanvas.addEventListener('mousemove', (e)=>{
+      if(!isDrawing) return;
+      const p = screenToCanvas(e.clientX,e.clientY);
+      redrawAll();
+      drawCtx.strokeStyle = '#a78bfa';
+      drawCtx.lineWidth = 1.6;
+      drawCtx.setLineDash([6,3]);
+      drawCtx.beginPath();
+      if(drawMode==='trend'){
+        drawCtx.moveTo(startX,startY); drawCtx.lineTo(p.x,p.y);
+      } else if(drawMode==='hline'){
+        drawCtx.moveTo(0,startY); drawCtx.lineTo(drawCanvas.width,startY);
+      }
+      drawCtx.stroke();
+      drawCtx.setLineDash([]);
+    });
+    drawCanvas.addEventListener('mouseup', (e)=>{
+      if(!isDrawing) return;
+      const p = screenToCanvas(e.clientX,e.clientY);
+      if(drawMode==='trend'){
+        drawings.push({type:'trend', x1:startX, y1:startY, x2:p.x, y2:p.y, color:'#a78bfa'});
+      } else if(drawMode==='hline'){
+        drawings.push({type:'hline', y1:startY, color:'#f97316'});
+      }
+      isDrawing=false;
+      redrawAll();
+    });
+
+    function drawingIndexNearby(x,y){
+      for(let i=drawings.length-1;i>=0;i--){
+        const d = drawings[i];
+        if(d.type==='trend'){
+          // distance from line approx
+          const dist = pointToSegmentDistance(x,y,d.x1,d.y1,d.x2,d.y2);
+          if(dist < 10) return i;
+        } else if(d.type==='hline'){
+          if(Math.abs(y - d.y1) < 8) return i;
+        }
+      }
+      return -1;
+    }
+    function pointToSegmentDistance(px,py,x1,y1,x2,y2){
+      const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
+      const dot = A*C + B*D;
+      const len_sq = C*C + D*D;
+      let param = -1;
+      if(len_sq !== 0) param = dot / len_sq;
+      let xx, yy;
+      if(param < 0){ xx = x1; yy = y1; }
+      else if(param > 1){ xx = x2; yy = y2; }
+      else { xx = x1 + param*C; yy = y1 + param*D; }
+      const dx = px - xx, dy = py - yy;
+      return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    document.getElementById('tool-trend').addEventListener('click', ()=>{
+      drawMode = 'trend';
+      setToolActive('tool-trend');
+    });
+    document.getElementById('tool-hline').addEventListener('click', ()=>{
+      drawMode = 'hline';
+      setToolActive('tool-hline');
+    });
+    document.getElementById('tool-erase').addEventListener('click', ()=>{
+      drawMode = 'erase';
+      setToolActive('tool-erase');
+    });
+    document.getElementById('tool-clear').addEventListener('click', ()=>{
+      drawings.length = 0;
+      redrawAll();
+    });
+    function setToolActive(id){
+      ['tool-trend','tool-hline','tool-erase','tool-clear'].forEach(k=>{
+        document.getElementById(k).classList.remove('active');
+      });
+      document.getElementById(id).classList.add('active');
+    }
+
+    // --------------------------
+    // REST fetch initial data and create UI
+    async function fetchInitial(){
+      try {
+        const s = await (await fetch(API_BASE + '/api/summary')).json();
+        currentSummary = s;
+        applySummary(s);
+        const t = await (await fetch(API_BASE + '/api/trades')).json();
+        applyTrades(t);
+        const chart = await (await fetch(API_BASE + '/api/chart')).json();
+        createChart(chart.labels || [], chart.values || []);
+      } catch (e) {
+        console.error('initial fetch error', e);
+      }
+    }
+
+    function applySummary(s){
+      if(!s) return;
+      const sum = s.overall || s;
+      setText('overall-profit', '₹' + fmt(sum.day_pnl||0));
+      setText('overall-charges', '₹' + fmt(sum.charges||0));
+      setText('overall-capital', '₹' + fmt(sum.capital_used||0));
+      setText('wallet-balance', '₹' + fmt(sum.current_balance||0));
+      // CE/PE
+      if(s.ce){
+        setText('ce-net','₹' + fmt(s.ce.day_pnl||0));
+        const grossCE = (s.ce.trades||[]).reduce((a,t)=>a + (t.gross_profit||0),0);
+        const chargesCE = (s.ce.trades||[]).reduce((a,t)=>a + (t.charges?.total||0),0);
+        setText('ce-gross','₹' + fmt(grossCE));
+        setText('ce-charges','₹' + fmt(chargesCE));
+        // trading indicator
+        if((s.ce.trades||[]).length>0){ document.getElementById('ce-trading-ind').innerHTML = '<i class="fa fa-circle active-dot mr-2"></i>Trading'; } else { document.getElementById('ce-trading-ind').innerText = 'Idle'; }
+      }
+      if(s.pe){
+        setText('pe-net','₹' + fmt(s.pe.day_pnl||0));
+        const grossPE = (s.pe.trades||[]).reduce((a,t)=>a + (t.gross_profit||0),0);
+        const chargesPE = (s.pe.trades||[]).reduce((a,t)=>a + (t.charges?.total||0),0);
+        setText('pe-gross','₹' + fmt(grossPE));
+        setText('pe-charges','₹' + fmt(chargesPE));
+        if((s.pe.trades||[]).length>0){ document.getElementById('pe-trading-ind').innerHTML = '<i class="fa fa-circle active-dot mr-2"></i>Trading'; } else { document.getElementById('pe-trading-ind').innerText = 'Idle'; }
+      }
+    }
+
+    function applyTrades(t){
+      const tbody = document.getElementById('trade-table-body');
+      tbody.innerHTML = '';
+      const ce = t.ce || [];
+      const pe = t.pe || [];
+      const combined = [...ce.map(x=>({...x, opt:'CE'})), ...pe.map(x=>({...x, opt:'PE'}))];
+      combined.sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
+      combined.forEach(tr => {
+        const trEl = document.createElement('tr');
+        trEl.className = 'border-b border-gray-800';
+        trEl.innerHTML = `
+          <td class="p-2 small">${new Date(tr.timestamp).toLocaleTimeString()}</td>
+          <td class="p-2 small">${tr.opt}</td>
+          <td class="p-2 small">${tr.quantity||'-'}</td>
+          <td class="p-2 small">${fmt(tr.gross_profit||0)}</td>
+          <td class="p-2 small">${fmt(tr.net_profit||0)}</td>
+          <td class="p-2 small">${fmt((tr.charges && tr.charges.total) || 0)}</td>
+        `;
+        tbody.appendChild(trEl);
+      });
+    }
+
+    // --------------------------
+    // WebSocket real-time updates
+    let ws = null;
+    function startWebSocket(){
+      ws = new WebSocket(WS_URL);
+      ws.onopen = ()=>{ console.log('WS open'); };
+      ws.onmessage = (evt)=>{
+        const msg = JSON.parse(evt.data);
+        if(msg.type === 'log'){
+          // optionally show logs
+          // console.log('LOG', msg.data);
+        } else if(msg.type === 'summary'){
+          applySummary(msg.data);
+        } else if(msg.type === 'trades'){
+          applyTrades(msg.data);
+        } else if(msg.type === 'chart'){
+          createChart(msg.data.labels || [], msg.data.values || []);
+        }
+      };
+      ws.onclose = ()=>{ console.log('WS closed, reconnect in 2s'); setTimeout(startWebSocket,2000); };
+      ws.onerror = (e)=>{ console.error('WS error', e); ws.close(); };
+    }
+
+    // --------------------------
+    // Start/Stop CE & PE buttons
+    document.getElementById('btn-trade-ce').addEventListener('click', async ()=>{
+      const url = API_BASE + (ceActive ? '/api/stop_ce' : '/api/start_ce');
+      try {
+        await fetch(url, { method:'POST' });
+        ceActive = !ceActive;
+        document.getElementById('btn-trade-ce').innerText = ceActive ? 'Stop CE' : 'Trade CE';
+        document.getElementById('btn-trade-ce').classList.toggle('trade-active', ceActive);
+      } catch(e){ console.error(e); }
+    });
+    document.getElementById('btn-trade-pe').addEventListener('click', async ()=>{
+      const url = API_BASE + (peActive ? '/api/stop_pe' : '/api/start_pe');
+      try {
+        await fetch(url, { method:'POST' });
+        peActive = !peActive;
+        document.getElementById('btn-trade-pe').innerText = peActive ? 'Stop PE' : 'Trade PE';
+        document.getElementById('btn-trade-pe').classList.toggle('trade-active', peActive);
+      } catch(e){ console.error(e); }
+    });
+
+    // --------------------------
+    // Chart mode / timeframe
+    document.getElementById('btn-candle').addEventListener('click', ()=>{ chartMode='candlestick'; createChart(lastChartLabels,lastChartValues); });
+    document.getElementById('btn-line').addEventListener('click', ()=>{ chartMode='line'; createChart(lastChartLabels,lastChartValues); });
+    document.getElementById('btn-fullscreen').addEventListener('click', ()=>{
+      if(chartContainer.requestFullscreen) chartContainer.requestFullscreen();
+    });
+
+    // timeframe buttons - they call backend /api/chart (backend to support interval param later)
+    document.querySelectorAll('.timeframe-btn').forEach(b=>{
+      b.addEventListener('click', async (e)=>{
+        document.querySelectorAll('.timeframe-btn').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        // request backend (if you implement interval support)
+        try {
+          const res = await fetch(API_BASE + '/api/chart');
+          const j = await res.json();
+          createChart(j.labels || [], j.values || []);
+        } catch(e){ console.error(e); }
+      });
+    });
+
+    // --------------------------
+    // Instrument switch: fetch instrument JSON for CE/PE
+    document.getElementById('instrument-select').addEventListener('change', async (e)=>{
+      // backend provides /api/instrument/CE and /api/instrument/PE
+      try {
+        const rCE = await fetch(API_BASE + '/api/instrument/CE');
+        if(rCE.ok){
+          const j = await rCE.json();
+          setText('ce-strike', j.strike_ce || '--');
+          setText('ce-key', j.instrument_key || '--');
+        } else { setText('ce-strike','--'); setText('ce-key','--'); }
+        const rPE = await fetch(API_BASE + '/api/instrument/PE');
+        if(rPE.ok){
+          const j2 = await rPE.json();
+          setText('pe-strike', j2.strike_pe || '--');
+          setText('pe-key', j2.instrument_key || '--');
+        } else { setText('pe-strike','--'); setText('pe-key','--'); }
+      } catch (ex){ console.error(ex); }
+    });
+
+    // --------------------------
+    // Initial load
+    let lastChartLabels = [], lastChartValues = [];
+    async function loadAll(){
+      await fetchInitial();
+      startWebSocket();
+      // get instrument info once
+      document.getElementById('instrument-select').dispatchEvent(new Event('change'));
+    }
+    loadAll();
+
+    // keep last chart to re-create when switching modes
+    function createChart(labels, values){
+      lastChartLabels = labels || [];
+      lastChartValues = values || [];
+      createChartDebounced(labels, values);
+    }
+    let createChartDebounced = (function(){
+      let last = 0;
+      return function(labels, values){
+        const t = Date.now();
+        if(t - last < 50) { setTimeout(()=>createChart(labels,values),60); return; }
+        last = t;
+        try {
+          createChartInternal(labels, values);
+        } catch(e){ console.error(e); }
+      };
+    })();
+
+    function createChartInternal(labels, values){
+      // backend may supply either array of numbers (close) with labels or array of OHLC objects in values
+      // For candlestick we prefer OHLC objects format: [{t:ts,o:...,h:...,l:...,c:...}, ...]
+      // If backend sends only close values, we will render a simple line chart.
+      if(chartMode === 'candlestick') {
+        // prefer if backend gave full OHLC; if not, synthesize small OHLC around close
+        let financialData = [];
+        if (values.length && typeof values[0] === 'object' && values[0].o !== undefined) {
+          // backend provided explicit OHLC
+          financialData = values.map(v => ({ x: v.t ? new Date(v.t) : v.x, o: v.o, h: v.h, l: v.l, c: v.c }));
+        } else {
+          financialData = values.map((c, i) => {
+            const o = c * (1 - 0.002); const h = c * (1 + 0.004); const l = c * (1 - 0.004);
+            return { x: labels[i] ? labels[i] : i, o: o, h: h, l: l, c: c };
+          });
+        }
+        createChart(labels, values); // placeholder to keep function consistent
+        // Use createChart() earlier but to avoid recursion, directly call Chart creation here:
+        if(tradingChart) tradingChart.destroy();
+        tradingChart = new Chart(chartCanvas.getContext('2d'), {
+          type: 'candlestick',
+          data: { datasets: [{ label: 'Price', data: financialData }] },
+          options: { animation:false, plugins:{legend:{display:false}}, scales:{ x:{ grid:{color:'rgba(255,255,255,0.04)'} }, y:{ grid:{color:'rgba(255,255,255,0.04)'} } } }
+        });
+      } else {
+        // line
+        const numericValues = values.map(v => typeof v === 'object' ? v.c : v);
+        if(tradingChart) tradingChart.destroy();
+        tradingChart = new Chart(chartCanvas.getContext('2d'), {
+          type: 'line',
+          data: { labels: labels, datasets: [{ label: 'Price', data: numericValues, borderColor:'#06b6d4', backgroundColor:'rgba(6,182,212,0.08)', fill:true }] },
+          options: { animation:false, plugins:{legend:{display:false}}, scales:{ x:{ grid:{color:'rgba(255,255,255,0.04)'} }, y:{ grid:{color:'rgba(255,255,255,0.04)'} } } }
+        });
+      }
+      resizeDrawCanvas();
+    }
+
+    // Workaround: small safe create wrapper (chart lib differences)
+    function createChartWrapper(labels, values){
+      // If candlestick requested and chartjs-financial available -> draw candlestick
+      if(chartMode === 'candlestick' && Chart.controllers && Chart.controllers.candlestick) {
+        // prepare data format if not provided
+        const hasOHLC = values.length && typeof values[0] === 'object' && values[0].o !== undefined;
+        if(!hasOHLC){
+          const f = (values||[]).map((c,i)=>({ t: labels[i]||i, o:c*0.998, h:c*1.002, l:c*0.996, c:c }));
+          createChartInternal(labels, f);
+        } else {
+          createChartInternal(labels, values);
+        }
+      } else {
+        createChartInternal(labels, values);
+      }
+    }
+
+    // ensure we call the wrapper
+    createChart = createChartWrapper;
+
+  </script>
+</body>
+</html>

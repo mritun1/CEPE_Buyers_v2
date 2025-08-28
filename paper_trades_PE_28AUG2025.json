@@ -10950,5 +10950,33 @@
     "gross_profit": -157.5,
     "net_profit": -224.1,
     "day_pnl": -2510.0600000000004
+  },
+  {
+    "timestamp": "2025-08-28T21:04:00.135253+05:30",
+    "instrument_key": "NSE_FO|71963",
+    "strike_price_mode": "PE",
+    "action": "BUY",
+    "quantity": 70,
+    "price": 199.0,
+    "order_type": "MARKET",
+    "mode": "PAPER",
+    "charges": {},
+    "gross_profit": null,
+    "net_profit": null,
+    "day_pnl": null
+  },
+  {
+    "timestamp": "2025-08-28T21:04:01.296844+05:30",
+    "instrument_key": "NSE_FO|71963",
+    "strike_price_mode": "PE",
+    "action": "BUY",
+    "quantity": 70,
+    "price": 199.0,
+    "order_type": "MARKET",
+    "mode": "PAPER",
+    "charges": {},
+    "gross_profit": null,
+    "net_profit": null,
+    "day_pnl": null
   }
 ]
